@@ -25,41 +25,58 @@ ifeq ($(UNAME_S),Darwin)
     CUDA_LIBS += -L/opt/homebrew/lib -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
 endif
 
-TARGET = mandelbrot_opencl
-TARGET_C = mandelbrot_opencl_c
-TARGET_SIMPLE = mandelbrot_simple
-TARGET_CPU = mandelbrot_cpu
-TARGET_CUDA = mandelbrot_cuda
-SOURCES = mandelbrot_opencl.cpp
-SOURCES_C = mandelbrot_opencl_c.cpp
-SOURCES_SIMPLE = mandelbrot_simple.cpp
-SOURCES_CPU = mandelbrot_cpu.cpp
-SOURCES_CUDA = mandelbrot_cuda.cpp
-CUDA_KERNEL = mandelbrot_kernel.cu
-KERNEL_FILE = mandelbrot_kernel.cl
+# Source directories
+SRC_DIR = src
+OPENCL_DIR = $(SRC_DIR)/opencl
+CUDA_DIR = $(SRC_DIR)/cuda
+CPU_DIR = $(SRC_DIR)/cpu
+BUILD_DIR = build
 
-.PHONY: all clean install-deps run debug c-version simple cpu cuda check-opencl check-cuda install-cuda
+# Targets and sources with new paths
+TARGET = $(BUILD_DIR)/mandelbrot_opencl_full
+TARGET_C = $(BUILD_DIR)/mandelbrot_opencl_c
+TARGET_SIMPLE = $(BUILD_DIR)/mandelbrot_opencl
+TARGET_CPU = $(BUILD_DIR)/mandelbrot_cpu
+TARGET_CUDA = $(BUILD_DIR)/mandelbrot_cuda
+
+SOURCES = $(OPENCL_DIR)/mandelbrot_opencl_full.cpp
+SOURCES_C = $(OPENCL_DIR)/mandelbrot_opencl_c.cpp
+SOURCES_SIMPLE = $(OPENCL_DIR)/mandelbrot_opencl.cpp
+SOURCES_CPU = $(CPU_DIR)/mandelbrot_cpu.cpp
+SOURCES_CUDA = $(CUDA_DIR)/mandelbrot_cuda.cpp
+CUDA_KERNEL = $(CUDA_DIR)/mandelbrot_kernel.cu
+KERNEL_FILE = $(OPENCL_DIR)/mandelbrot_kernel.cl
+
+.PHONY: all clean install-deps run debug c-version opencl cpu cuda check-opencl check-cuda install-cuda
 
 all: $(TARGET_SIMPLE) $(TARGET_CPU)
 
-$(TARGET): $(SOURCES) $(KERNEL_FILE)
+# Ensure build directory exists
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+$(TARGET): $(SOURCES) $(KERNEL_FILE) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(SOURCES) -o $(TARGET) $(LIBS)
 
-$(TARGET_C): $(SOURCES_C) $(KERNEL_FILE)
+$(TARGET_C): $(SOURCES_C) $(KERNEL_FILE) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(SOURCES_C) -o $(TARGET_C) $(LIBS)
 
-$(TARGET_SIMPLE): $(SOURCES_SIMPLE) $(KERNEL_FILE)
+$(TARGET_SIMPLE): $(SOURCES_SIMPLE) $(KERNEL_FILE) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(SOURCES_SIMPLE) -o $(TARGET_SIMPLE) $(LIBS)
 
-$(TARGET_CPU): $(SOURCES_CPU)
+$(TARGET_CPU): $(SOURCES_CPU) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(SOURCES_CPU) -o $(TARGET_CPU) -lGL -lGLEW -lglfw -lpthread -lX11 -lXrandr -lXinerama -lXcursor -ldl
 
-$(TARGET_CUDA): $(SOURCES_CUDA) $(CUDA_KERNEL)
+$(TARGET_CUDA): $(SOURCES_CUDA) $(CUDA_KERNEL) | $(BUILD_DIR)
 	$(NVCC) $(NVCCFLAGS) $(CUDA_KERNEL) $(SOURCES_CUDA) -o $(TARGET_CUDA) $(CUDA_LIBS)
 
 c-version: $(TARGET_C)
 
-simple: $(TARGET_SIMPLE)
+opencl: $(TARGET_SIMPLE)
+
+# Deprecated alias for backward compatibility
+simple: opencl
+	@echo "Warning: 'make simple' is deprecated. Use 'make opencl' instead."
 
 cpu: $(TARGET_CPU)
 
@@ -69,7 +86,8 @@ debug: CFLAGS += -g -DDEBUG
 debug: $(TARGET)
 
 clean:
-	rm -f $(TARGET) $(TARGET_C) $(TARGET_SIMPLE) $(TARGET_CPU) $(TARGET_CUDA)
+	rm -f $(BUILD_DIR)/*
+	rmdir $(BUILD_DIR) 2>/dev/null || true
 
 # Install dependencies on Ubuntu/Debian
 install-deps-ubuntu:
@@ -132,7 +150,7 @@ install-cuda-arch:
 	sudo pacman -S --needed cuda cuda-tools
 
 run: $(TARGET_SIMPLE)
-	./$(TARGET_SIMPLE)
+	$(TARGET_SIMPLE)
 
 # Check OpenCL devices
 check-opencl:
@@ -152,13 +170,20 @@ benchmark: $(TARGET)
 
 help:
 	@echo "Available targets:"
-	@echo "  all                  - Build the OpenCL versions (simple + cpu)"
-	@echo "  simple               - Build OpenCL GPU version"
+	@echo "  all                  - Build the OpenCL versions (opencl + cpu)"
+	@echo "  simple               - Build main OpenCL GPU version"
 	@echo "  cpu                  - Build CPU version"
 	@echo "  cuda                 - Build CUDA GPU version"
+	@echo "  c-version            - Build C-style OpenCL version"
 	@echo "  debug                - Build with debug symbols"
 	@echo "  clean                - Remove built files"
-	@echo "  run                  - Build and run the OpenCL version"
+	@echo "  run                  - Build and run the main OpenCL version"
+	@echo ""
+	@echo "Built executables will be in the 'build/' directory:"
+	@echo "  build/mandelbrot_opencl      - Main OpenCL version"
+	@echo "  build/mandelbrot_cpu         - CPU version"
+	@echo "  build/mandelbrot_cuda        - CUDA version (if built)"
+	@echo "  build/mandelbrot_opencl_full - Full-featured OpenCL version"
 	@echo ""
 	@echo "Installation targets:"
 	@echo "  install-deps-ubuntu  - Install OpenCL dependencies on Ubuntu/Debian"

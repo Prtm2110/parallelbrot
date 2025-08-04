@@ -19,16 +19,16 @@ make install-deps-ubuntu     # Ubuntu/Debian OpenCL deps
 make install-cuda-ubuntu     # Ubuntu/Debian CUDA deps (if NVIDIA)
 
 # Build and run
-make simple           # Build OpenCL version (recommended)
-./mandelbrot_simple   # Run OpenCL version
+make opencl                    # Build OpenCL version (recommended for all GPUs)
+build/mandelbrot_opencl        # Run OpenCL version
 
 # OR for NVIDIA GPUs with CUDA installed:
-make cuda             # Build CUDA version  
-./mandelbrot_cuda     # Run CUDA version (maximum performance)
+make cuda                      # Build CUDA version  
+build/mandelbrot_cuda          # Run CUDA version (maximum performance)
 
 # OR for comparison:
-make cpu              # Build CPU version
-./mandelbrot_cpu      # Run CPU version
+make cpu                       # Build CPU version
+build/mandelbrot_cpu           # Run CPU version
 ```
 
 ## Features
@@ -46,10 +46,28 @@ make cpu              # Build CPU version
 
 | Program | Backend | Description | Best For |
 |---------|---------|-------------|----------|
-| `mandelbrot_simple` | OpenCL | Primary GPU-accelerated version | Cross-platform compatibility |
-| `mandelbrot_cuda` | CUDA | NVIDIA-optimized version | Maximum NVIDIA GPU performance |
-| `mandelbrot_cpu` | CPU | CPU-only implementation | Performance comparison |
-| `mandelbrot_opencl` | OpenCL | Full-featured OpenCL version | Advanced OpenCL features |
+| `build/mandelbrot_opencl` | OpenCL | Primary GPU-accelerated version | Cross-platform compatibility |
+| `build/mandelbrot_cuda` | CUDA | NVIDIA-optimized version | Maximum NVIDIA GPU performance |
+| `build/mandelbrot_cpu` | CPU | CPU-only implementation | Performance comparison |
+| `build/mandelbrot_opencl_full` | OpenCL | Full-featured OpenCL version | Advanced OpenCL features |
+
+## Project Structure
+
+```
+src/
+├── opencl/                    # OpenCL implementations
+│   ├── mandelbrot_opencl.cpp      # Main OpenCL version  
+│   ├── mandelbrot_opencl_full.cpp # Full-featured OpenCL
+│   ├── mandelbrot_opencl_c.cpp    # C-style OpenCL
+│   └── mandelbrot_kernel.cl       # OpenCL compute kernel
+├── cuda/                      # CUDA implementation
+│   ├── mandelbrot_cuda.cpp        # CUDA version
+│   └── mandelbrot_kernel.cu       # CUDA compute kernel
+└── cpu/                       # CPU implementation
+    └── mandelbrot_cpu.cpp         # CPU-only version
+build/                         # Compiled executables
+scripts/                       # Utility scripts
+```
 
 ## Controls
 
@@ -64,7 +82,7 @@ All versions share the same controls:
 
 ## Requirements
 
-### OpenCL Requirements (for `mandelbrot_simple`, `mandelbrot_opencl`)
+### OpenCL Requirements (for `build/mandelbrot_opencl`, `build/mandelbrot_opencl_full`)
 
 #### Ubuntu/Debian:
 ```bash
@@ -122,9 +140,9 @@ make install-cuda-arch
 make
 
 # Build specific versions
-make simple    # OpenCL GPU version
+make opencl    # OpenCL GPU version (all platforms)
 make cpu       # CPU version  
-make cuda      # CUDA GPU version
+make cuda      # CUDA GPU version (NVIDIA only)
 
 # Build with debug symbols
 make debug
@@ -150,31 +168,31 @@ make check-cuda
 ### Quick Start
 ```bash
 # Run OpenCL GPU version (recommended)
-./mandelbrot_simple
+build/mandelbrot_opencl
 
 # Run CUDA version (NVIDIA GPUs only)
-./mandelbrot_cuda
+build/mandelbrot_cuda
 
 # Run CPU version (for comparison)
-./mandelbrot_cpu
+build/mandelbrot_cpu
 
 # Or use make target
-make run  # Runs mandelbrot_simple
+make run  # Builds and runs mandelbrot_opencl
 ```
 
 ### Choosing the Right Version
 
-**Use `mandelbrot_simple` (OpenCL) when:**
+**Use `build/mandelbrot_opencl` (OpenCL) when:**
 - You have any modern GPU (NVIDIA, AMD, Intel)
 - You want cross-platform compatibility
 - You're unsure which to choose
 
-**Use `mandelbrot_cuda` (CUDA) when:**
+**Use `build/mandelbrot_cuda` (CUDA) when:**
 - You have an NVIDIA GPU
 - You want maximum performance
 - You need CUDA-specific optimizations
 
-**Use `mandelbrot_cpu` when:**
+**Use `build/mandelbrot_cpu` when:**
 - You don't have a compatible GPU
 - You want to compare performance
 - Debugging or development
@@ -223,26 +241,26 @@ lspci | grep VGA    # List all graphics cards
 
 ### Components
 
-1. **OpenCL Implementation** (`mandelbrot_simple.cpp`):
+1. **OpenCL Implementation** (`src/opencl/mandelbrot_opencl.cpp`):
    - Cross-platform GPU acceleration
-   - OpenCL kernel execution (`mandelbrot_kernel.cl`)
+   - OpenCL kernel execution (`src/opencl/mandelbrot_kernel.cl`)
    - OpenGL rendering and window management
    - User input handling
 
-2. **CUDA Implementation** (`mandelbrot_cuda.cpp`):
+2. **CUDA Implementation** (`src/cuda/mandelbrot_cuda.cpp`):
    - NVIDIA-optimized GPU acceleration
-   - CUDA kernel execution (`mandelbrot_kernel.cu`)
+   - CUDA kernel execution (`src/cuda/mandelbrot_kernel.cu`)
    - CUDA-OpenGL interoperability for maximum performance
    - Same user interface as OpenCL version
 
-3. **CPU Implementation** (`mandelbrot_cpu.cpp`):
+3. **CPU Implementation** (`src/cpu/mandelbrot_cpu.cpp`):
    - CPU-only computation for comparison
    - Same controls and functionality
    - Multi-threaded CPU parallelization
 
 4. **Compute Kernels**:
-   - **OpenCL kernel** (`mandelbrot_kernel.cl`): Cross-platform GPU code
-   - **CUDA kernel** (`mandelbrot_kernel.cu`): NVIDIA-optimized GPU code
+   - **OpenCL kernel** (`src/opencl/mandelbrot_kernel.cl`): Cross-platform GPU code
+   - **CUDA kernel** (`src/cuda/mandelbrot_kernel.cu`): NVIDIA-optimized GPU code
    - Both include optimized Mandelbrot computation and coloring
 
 ### Data Flow
@@ -314,7 +332,7 @@ The kernels include multiple color mapping functions. You can:
    - Check GPU compatibility: `make check-cuda`
    - Ensure NVIDIA GPU with Compute Capability 5.0+
    - Update NVIDIA drivers to 470+ 
-   - Try `mandelbrot_simple` (OpenCL) as alternative
+   - Try `build/mandelbrot_opencl` (OpenCL) as alternative
 
 3. **CUDA runtime errors**:
    - Check GPU memory with `nvidia-smi`
@@ -324,7 +342,7 @@ The kernels include multiple color mapping functions. You can:
 ### Performance Issues
 
 1. **Slow rendering**:
-   - Try CUDA version for NVIDIA GPUs: `./mandelbrot_cuda`
+   - Try CUDA version for NVIDIA GPUs: `build/mandelbrot_cuda`
    - Reduce iteration count with `-/+` keys
    - Check if using integrated vs dedicated GPU
    - Monitor GPU usage with `nvidia-smi` or `radeontop`
@@ -343,9 +361,9 @@ The kernels include multiple color mapping functions. You can:
 
 ```bash
 # Test different versions
-./mandelbrot_simple   # Try OpenCL first
-./mandelbrot_cuda     # Try CUDA if you have NVIDIA
-./mandelbrot_cpu      # CPU fallback
+build/mandelbrot_opencl   # Try OpenCL first
+build/mandelbrot_cuda     # Try CUDA if you have NVIDIA
+build/mandelbrot_cpu      # CPU fallback
 
 # Check system compatibility  
 make check-opencl     # Check OpenCL devices
@@ -354,7 +372,7 @@ lspci | grep VGA      # List graphics cards
 
 # Debug build for more error info
 make debug
-./mandelbrot_simple
+build/mandelbrot_opencl
 ```
 
 ## Summary
@@ -363,20 +381,20 @@ make debug
 
 | Your Hardware | Recommended | Command | Performance |
 |---------------|-------------|---------|-------------|
-| **NVIDIA GPU + CUDA** | `mandelbrot_cuda` | `make cuda && ./mandelbrot_cuda` | ⭐⭐⭐⭐⭐ Best |
-| **NVIDIA GPU (no CUDA)** | `mandelbrot_simple` | `make simple && ./mandelbrot_simple` | ⭐⭐⭐⭐ Excellent |
-| **AMD GPU** | `mandelbrot_simple` | `make simple && ./mandelbrot_simple` | ⭐⭐⭐⭐ Excellent |
-| **Intel GPU** | `mandelbrot_simple` | `make simple && ./mandelbrot_simple` | ⭐⭐⭐ Good |
-| **No GPU/Issues** | `mandelbrot_cpu` | `make cpu && ./mandelbrot_cpu` | ⭐⭐ Baseline |
+| **NVIDIA GPU + CUDA** | `mandelbrot_cuda` | `make cuda && build/mandelbrot_cuda` | ⭐⭐⭐⭐⭐ Best |
+| **NVIDIA GPU (no CUDA)** | `mandelbrot_opencl` | `make opencl && build/mandelbrot_opencl` | ⭐⭐⭐⭐ Excellent |
+| **AMD GPU** | `mandelbrot_opencl` | `make opencl && build/mandelbrot_opencl` | ⭐⭐⭐⭐ Excellent |
+| **Intel GPU** | `mandelbrot_opencl` | `make opencl && build/mandelbrot_opencl` | ⭐⭐⭐ Good |
+| **No GPU/Issues** | `mandelbrot_cpu` | `make cpu && build/mandelbrot_cpu` | ⭐⭐ Baseline |
 
 ### Installation Summary
 
 ```bash
 # For most users (OpenCL):
-make install-deps-ubuntu && make simple && ./mandelbrot_simple
+make install-deps-ubuntu && make opencl && build/mandelbrot_opencl
 
 # For NVIDIA users wanting maximum performance (CUDA):
-make install-cuda-ubuntu && make cuda && ./mandelbrot_cuda
+make install-cuda-ubuntu && make cuda && build/mandelbrot_cuda
 ```
 
 ## Acknowledgments

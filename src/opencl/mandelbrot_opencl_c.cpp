@@ -1,5 +1,5 @@
 /*
-	OpenGL + OpenCL Mandelbrot Renderer
+	OpenGL + OpenCL Mandelbrot Renderer (C Version)
 	High-performance GPU-accelerated Mandelbrot set visualization
 	
 	Features:
@@ -20,9 +20,8 @@
 #define GLFW_EXPOSE_NATIVE_X11
 #define GLFW_EXPOSE_NATIVE_GLX
 #include <GLFW/glfw3native.h>
-#define CL_HPP_TARGET_OPENCL_VERSION 200
-#define CL_HPP_MINIMUM_OPENCL_VERSION 120
-#include <CL/opencl.hpp>
+#include <CL/cl.h>
+#include <CL/cl_gl.h>
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -41,14 +40,13 @@ private:
     GLuint vao, vbo, texture, shader_program;
     
     // OpenCL objects
-    cl::Platform platform;
-    cl::Device device;
-    cl::Context context;
-    cl::CommandQueue queue;
-    cl::Program program;
-    cl::Kernel kernel;
-    cl::Buffer cl_output_buffer;
-    cl::ImageGL cl_texture;
+    cl_platform_id platform;
+    cl_device_id device;
+    cl_context context;
+    cl_command_queue queue;
+    cl_program program;
+    cl_kernel kernel;
+    cl_mem cl_texture;
     
     // Mandelbrot parameters
     double center_x = -0.5;
@@ -194,68 +192,104 @@ private:
     }
     
     bool setupOpenCL() {
-        try {
-            // Get platforms
-            std::vector<cl::Platform> platforms;
-            cl::Platform::get(&platforms);
-            
-            if (platforms.empty()) {
-                std::cerr << "No OpenCL platforms found\n";
-                return false;
-            }
-            
-            platform = platforms[0];
-            
-            // Get devices
-            std::vector<cl::Device> devices;
-            platform.getDevices(CL_DEVICE_TYPE_GPU, &devices);
-            
-            if (devices.empty()) {
-                platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
-            }
-            
-            if (devices.empty()) {
+        cl_int err;
+        
+        // Get platforms
+        cl_uint num_platforms;
+        err = clGetPlatformIDs(0, nullptr, &num_platforms);
+        if (err != CL_SUCCESS || num_platforms == 0) {
+            std::cerr << "No OpenCL platforms found\n";
+            return false;
+        }
+        
+        std::vector<cl_platform_id> platforms(num_platforms);
+        err = clGetPlatformIDs(num_platforms, platforms.data(), nullptr);
+        if (err != CL_SUCCESS) {
+            std::cerr << "Failed to get OpenCL platforms\n";
+            return false;
+        }
+        
+        platform = platforms[0];
+        
+        // Get devices
+        cl_uint num_devices;
+        err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 0, nullptr, &num_devices);
+        if (err != CL_SUCCESS || num_devices == 0) {
+            err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_ALL, 0, nullptr, &num_devices);
+            if (err != CL_SUCCESS || num_devices == 0) {
                 std::cerr << "No OpenCL devices found\n";
                 return false;
             }
-            
-            device = devices[0];
-            
-            std::cout << "Using OpenCL device: " << device.getInfo<CL_DEVICE_NAME>() << std::endl;
-            
-            // Create context with OpenGL interop
-            cl_context_properties properties[] = {
-                CL_GL_CONTEXT_KHR, (cl_context_properties)glfwGetCurrentContext(),
-                CL_GLX_DISPLAY_KHR, (cl_context_properties)glfwGetX11Display(),
-                CL_CONTEXT_PLATFORM, (cl_context_properties)platform(),
-                0
-            };
-            
-            context = cl::Context(device, properties);
-            queue = cl::CommandQueue(context, device);
-            
-            // Load and build kernel
-            std::string kernel_source = loadKernelSource("mandelbrot_kernel.cl");
-            if (kernel_source.empty()) {
-                return false;
-            }
-            
-            program = cl::Program(context, kernel_source);
-            
-            try {
-                program.build();
-            } catch (const cl::Error& err) {
-                std::cerr << "OpenCL compilation error: " << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device) << std::endl;
-                return false;
-            }
-            
-            kernel = cl::Kernel(program, "mandelbrot");
-            
-            // Create OpenCL image from OpenGL texture
-            cl_texture = cl::ImageGL(context, CL_MEM_WRITE_ONLY, GL_TEXTURE_2D, 0, texture);
-            
-        } catch (const cl::Error& err) {
-            std::cerr << "OpenCL error: " << err.what() << " (" << err.err() << ")\n";
+        }
+        
+        std::vector<cl_device_id> devices(num_devices);
+        err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, num_devices, devices.data(), nullptr);
+        if (err != CL_SUCCESS) {
+            err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_ALL, num_devices, devices.data(), nullptr);
+        }
+        
+        device = devices[0];
+        
+        // Print device info
+        char device_name[256];
+        clGetDeviceInfo(device, CL_DEVICE_NAME, sizeof(device_name), device_name, nullptr);
+        std::cout << "Using OpenCL device: " << device_name << std::endl;
+        
+        // Create context with OpenGL interop
+        cl_context_properties properties[] = {
+            CL_GL_CONTEXT_KHR, (cl_context_properties)glfwGetCurrentContext(),
+            CL_GLX_DISPLAY_KHR, (cl_context_properties)glfwGetX11Display(),
+            CL_CONTEXT_PLATFORM, (cl_context_properties)platform,
+            0
+        };
+        
+        context = clCreateContext(properties, 1, &device, nullptr, nullptr, &err);
+        if (err != CL_SUCCESS) {
+            std::cerr << "Failed to create OpenCL context: " << err << std::endl;
+            return false;
+        }
+        
+        queue = clCreateCommandQueue(context, device, 0, &err);
+        if (err != CL_SUCCESS) {
+            std::cerr << "Failed to create OpenCL command queue: " << err << std::endl;
+            return false;
+        }
+        
+        // Load and build kernel
+        std::string kernel_source = loadKernelSource("src/opencl/mandelbrot_kernel.cl");
+        if (kernel_source.empty()) {
+            return false;
+        }
+        
+        const char* source_ptr = kernel_source.c_str();
+        size_t source_size = kernel_source.length();
+        
+        program = clCreateProgramWithSource(context, 1, &source_ptr, &source_size, &err);
+        if (err != CL_SUCCESS) {
+            std::cerr << "Failed to create OpenCL program: " << err << std::endl;
+            return false;
+        }
+        
+        err = clBuildProgram(program, 1, &device, nullptr, nullptr, nullptr);
+        if (err != CL_SUCCESS) {
+            size_t log_size;
+            clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 0, nullptr, &log_size);
+            std::vector<char> log(log_size);
+            clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, log_size, log.data(), nullptr);
+            std::cerr << "OpenCL compilation error: " << log.data() << std::endl;
+            return false;
+        }
+        
+        kernel = clCreateKernel(program, "mandelbrot", &err);
+        if (err != CL_SUCCESS) {
+            std::cerr << "Failed to create OpenCL kernel: " << err << std::endl;
+            return false;
+        }
+        
+        // Create OpenCL image from OpenGL texture
+        cl_texture = clCreateFromGLTexture(context, CL_MEM_WRITE_ONLY, GL_TEXTURE_2D, 0, texture, &err);
+        if (err != CL_SUCCESS) {
+            std::cerr << "Failed to create OpenCL image from OpenGL texture: " << err << std::endl;
             return false;
         }
         
@@ -364,32 +398,45 @@ private:
     }
     
     void render() {
-        try {
-            // Acquire OpenGL texture
-            std::vector<cl::Memory> gl_objects = {cl_texture};
-            queue.enqueueAcquireGLObjects(&gl_objects);
-            
-            // Set kernel arguments
-            kernel.setArg(0, cl_texture);
-            kernel.setArg(1, window_width);
-            kernel.setArg(2, window_height);
-            kernel.setArg(3, center_x);
-            kernel.setArg(4, center_y);
-            kernel.setArg(5, zoom);
-            kernel.setArg(6, max_iterations);
-            
-            // Execute kernel
-            queue.enqueueNDRangeKernel(kernel, cl::NullRange, 
-                                     cl::NDRange(window_width, window_height), 
-                                     cl::NullRange);
-            
-            // Release OpenGL texture
-            queue.enqueueReleaseGLObjects(&gl_objects);
-            queue.finish();
-            
-        } catch (const cl::Error& err) {
-            std::cerr << "OpenCL execution error: " << err.what() << " (" << err.err() << ")\n";
+        cl_int err;
+        
+        // Acquire OpenGL texture
+        err = clEnqueueAcquireGLObjects(queue, 1, &cl_texture, 0, nullptr, nullptr);
+        if (err != CL_SUCCESS) {
+            std::cerr << "Failed to acquire GL objects: " << err << std::endl;
+            return;
         }
+        
+        // Set kernel arguments
+        err  = clSetKernelArg(kernel, 0, sizeof(cl_mem), &cl_texture);
+        err |= clSetKernelArg(kernel, 1, sizeof(int), &window_width);
+        err |= clSetKernelArg(kernel, 2, sizeof(int), &window_height);
+        err |= clSetKernelArg(kernel, 3, sizeof(double), &center_x);
+        err |= clSetKernelArg(kernel, 4, sizeof(double), &center_y);
+        err |= clSetKernelArg(kernel, 5, sizeof(double), &zoom);
+        err |= clSetKernelArg(kernel, 6, sizeof(int), &max_iterations);
+        
+        if (err != CL_SUCCESS) {
+            std::cerr << "Failed to set kernel arguments: " << err << std::endl;
+            return;
+        }
+        
+        // Execute kernel
+        size_t global_work_size[2] = {(size_t)window_width, (size_t)window_height};
+        err = clEnqueueNDRangeKernel(queue, kernel, 2, nullptr, global_work_size, nullptr, 0, nullptr, nullptr);
+        if (err != CL_SUCCESS) {
+            std::cerr << "Failed to execute kernel: " << err << std::endl;
+            return;
+        }
+        
+        // Release OpenGL texture
+        err = clEnqueueReleaseGLObjects(queue, 1, &cl_texture, 0, nullptr, nullptr);
+        if (err != CL_SUCCESS) {
+            std::cerr << "Failed to release GL objects: " << err << std::endl;
+            return;
+        }
+        
+        clFinish(queue);
         
         // Render with OpenGL
         glClear(GL_COLOR_BUFFER_BIT);
@@ -404,6 +451,12 @@ private:
     }
     
     void cleanup() {
+        if (kernel) clReleaseKernel(kernel);
+        if (program) clReleaseProgram(program);
+        if (queue) clReleaseCommandQueue(queue);
+        if (cl_texture) clReleaseMemObject(cl_texture);
+        if (context) clReleaseContext(context);
+        
         if (shader_program) glDeleteProgram(shader_program);
         if (texture) glDeleteTextures(1, &texture);
         if (vbo) glDeleteBuffers(1, &vbo);
@@ -427,20 +480,25 @@ private:
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, nullptr);
         
         // Recreate OpenCL texture
-        try {
-            renderer->cl_texture = cl::ImageGL(renderer->context, CL_MEM_WRITE_ONLY, GL_TEXTURE_2D, 0, renderer->texture);
-        } catch (const cl::Error& err) {
-            std::cerr << "Failed to recreate OpenCL texture: " << err.what() << std::endl;
+        if (renderer->cl_texture) {
+            clReleaseMemObject(renderer->cl_texture);
+        }
+        cl_int err;
+        renderer->cl_texture = clCreateFromGLTexture(renderer->context, CL_MEM_WRITE_ONLY, GL_TEXTURE_2D, 0, renderer->texture, &err);
+        if (err != CL_SUCCESS) {
+            std::cerr << "Failed to recreate OpenCL texture: " << err << std::endl;
         }
     }
     
     static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
+        (void)xoffset; // Suppress unused warning
         auto* renderer = static_cast<MandelbrotRenderer*>(glfwGetWindowUserPointer(window));
         double zoom_factor = (yoffset > 0) ? 1.2 : 0.8;
         renderer->zoom *= zoom_factor;
     }
     
     static void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
+        (void)mods; // Suppress unused warning
         auto* renderer = static_cast<MandelbrotRenderer*>(glfwGetWindowUserPointer(window));
         if (button == GLFW_MOUSE_BUTTON_LEFT) {
             if (action == GLFW_PRESS) {
@@ -468,6 +526,8 @@ private:
     }
     
     static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+        (void)scancode; // Suppress unused warning
+        (void)mods;     // Suppress unused warning
         auto* renderer = static_cast<MandelbrotRenderer*>(glfwGetWindowUserPointer(window));
         
         if (action == GLFW_PRESS || action == GLFW_REPEAT) {
