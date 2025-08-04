@@ -7,6 +7,8 @@
 
 A high-performance GPU-accelerated Mandelbrot set renderer with multiple backend support: **OpenCL** for cross-platform compatibility and **CUDA** for maximum NVIDIA GPU performance, plus OpenGL for hardware-accelerated rendering.
 
+![Mandelbrot Renderer Demo](docs/mandelbrot.gif)
+
 ## Quick Start
 
 ```bash
