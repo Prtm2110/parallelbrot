@@ -488,8 +488,31 @@ private:
     static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
         (void)xoffset; // Suppress unused warning
         auto* renderer = static_cast<MandelbrotRenderer*>(glfwGetWindowUserPointer(window));
+        
+        // Get current mouse position
+        double mouse_x, mouse_y;
+        glfwGetCursorPos(window, &mouse_x, &mouse_y);
+        
+        // Convert mouse position to complex plane coordinates (before zoom)
+        double aspect_ratio = (double)renderer->window_width / renderer->window_height;
+        double scale = 2.0 / renderer->zoom;
+        
+        // Normalize mouse coordinates to [-1, 1] range
+        double norm_x = (2.0 * mouse_x / renderer->window_width) - 1.0;
+        double norm_y = 1.0 - (2.0 * mouse_y / renderer->window_height); // Flip Y coordinate
+        
+        // Convert to complex plane coordinates
+        double complex_x = renderer->center_x + norm_x * scale * aspect_ratio;
+        double complex_y = renderer->center_y + norm_y * scale;
+        
+        // Apply zoom
         double zoom_factor = (yoffset > 0) ? 1.2 : 0.8;
         renderer->zoom *= zoom_factor;
+        
+        // Adjust center so the point under cursor remains fixed
+        double new_scale = 2.0 / renderer->zoom;
+        renderer->center_x = complex_x - norm_x * new_scale * aspect_ratio;
+        renderer->center_y = complex_y - norm_y * new_scale;
     }
     
     static void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {

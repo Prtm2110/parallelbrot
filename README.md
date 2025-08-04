@@ -1,9 +1,6 @@
 # Mandelbrot GPU Renderer
 
-✅ **Successfully converted** from CPU-based olcPixelGameEngine to **OpenGL** and **OpenCL** GPU acceleration!
-
 A high-performance GPU-accelerated Mandelbrot set renderer using OpenCL for computation and OpenGL for rendering.
-
 
 
 ## Features
@@ -179,10 +176,13 @@ The kernels include multiple color mapping functions. You can:
    - Enable VSync in graphics drivers
    - Reduce window size for testing
 
+## Acknowledgments
+
+Inspired by Javidx9's Mandelbrot on olcPixelGameEngine 
+
 ## License
 
-Based on the original OneLoneCoder Mandelbrot example (OLC-3 License).
-OpenCL/OpenGL implementation additions released under MIT License.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Contributing
 
