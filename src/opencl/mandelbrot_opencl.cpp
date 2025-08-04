@@ -42,6 +42,7 @@ private:
     double center_y = 0.0;
     double zoom = 1.0;
     int max_iterations = 128;
+    int color_scheme = 1; // 0=UltraFractal, 1=Fire, 2=Ocean, 3=Psychedelic (Fire default)
     
     // Mouse interaction
     double last_mouse_x = 0.0;
@@ -403,6 +404,7 @@ private:
         err |= clSetKernelArg(kernel, 4, sizeof(double), &center_y);
         err |= clSetKernelArg(kernel, 5, sizeof(double), &zoom);
         err |= clSetKernelArg(kernel, 6, sizeof(int), &max_iterations);
+        err |= clSetKernelArg(kernel, 7, sizeof(int), &color_scheme);
         
         if (err != CL_SUCCESS) {
             std::cerr << "Failed to set kernel arguments: " << err << std::endl;
@@ -569,6 +571,17 @@ private:
                     renderer->center_y = 0.0;
                     renderer->zoom = 1.0;
                     break;
+                case GLFW_KEY_C:
+                    // Cycle through color schemes
+                    renderer->color_scheme = (renderer->color_scheme + 1) % 4;
+                    std::cout << "Color scheme: ";
+                    switch (renderer->color_scheme) {
+                        case 0: std::cout << "Ultra Fractal" << std::endl; break;
+                        case 1: std::cout << "Fire" << std::endl; break;
+                        case 2: std::cout << "Ocean" << std::endl; break;
+                        case 3: std::cout << "Psychedelic" << std::endl; break;
+                    }
+                    break;
             }
         }
     }
@@ -588,6 +601,7 @@ int main() {
     std::cout << "  Mouse wheel: Zoom\n";
     std::cout << "  Arrow keys: Pan\n";
     std::cout << "  +/-: Increase/decrease iterations\n";
+    std::cout << "  C: Change color scheme\n";
     std::cout << "  R: Reset view\n";
     std::cout << "  ESC: Exit\n\n";
     

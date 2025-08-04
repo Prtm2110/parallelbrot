@@ -34,7 +34,8 @@ extern "C" {
                                  double center_x,
                                  double center_y,
                                  double zoom,
-                                 int max_iterations);
+                                 int max_iterations,
+                                 int color_scheme);
 }
 
 class CUDAMandelbrotRenderer {
@@ -61,6 +62,7 @@ private:
     double center_y = 0.0;
     double zoom = 1.0;
     int max_iterations = 128;
+    int color_scheme = 1; // 0=UltraFractal, 1=Fire, 2=Ocean, 3=Psychedelic (Fire default)
     
     // Mouse interaction
     double last_mouse_x = 0.0;
@@ -337,7 +339,8 @@ private:
             center_x,
             center_y,
             zoom,
-            max_iterations
+            max_iterations,
+            color_scheme
         );
         
         // Copy result to OpenGL texture
@@ -496,6 +499,17 @@ private:
                 case GLFW_KEY_DOWN:
                     renderer->center_y -= 0.1 / renderer->zoom;
                     break;
+                case GLFW_KEY_C:
+                    // Cycle through color schemes
+                    renderer->color_scheme = (renderer->color_scheme + 1) % 4;
+                    std::cout << "Color scheme: ";
+                    switch (renderer->color_scheme) {
+                        case 0: std::cout << "Ultra Fractal" << std::endl; break;
+                        case 1: std::cout << "Fire" << std::endl; break;
+                        case 2: std::cout << "Ocean" << std::endl; break;
+                        case 3: std::cout << "Psychedelic" << std::endl; break;
+                    }
+                    break;
             }
         }
     }
@@ -515,6 +529,7 @@ int main() {
     std::cout << "  Mouse wheel: Zoom\n";
     std::cout << "  Arrow keys: Pan\n";
     std::cout << "  +/-: Increase/decrease iterations\n";
+    std::cout << "  C: Change color scheme\n";
     std::cout << "  R: Reset view\n";
     std::cout << "  ESC: Exit\n\n";
     

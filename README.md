@@ -77,6 +77,7 @@ All versions share the same controls:
 - **Mouse wheel**: Zoom in/out
 - **Arrow keys**: Pan with keyboard
 - **+/-**: Increase/decrease iteration count
+- **C**: Cycle through color schemes (Ultra Fractal, Fire, Ocean, Psychedelic)
 - **R**: Reset view to default
 - **ESC**: Exit application
 

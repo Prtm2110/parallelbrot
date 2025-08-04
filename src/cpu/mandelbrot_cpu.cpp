@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cmath>
 #include <string>
+#include <algorithm>
 
 class CPUMandelbrotRenderer {
 private:
@@ -234,16 +235,134 @@ private:
         return shader;
     }
     
-    void mapColor(int iterations, int max_iterations, float& r, float& g, float& b) {
+    // Color scheme selection
+    int color_scheme = 1; // 0 = Ultra Fractal, 1 = Fire, 2 = Ocean, 3 = Psychedelic (Fire default)
+    
+    // Enhanced color mapping functions with multiple beautiful palettes
+    
+    void mapColor_UltraFractal(int iterations, int max_iterations, float& r, float& g, float& b) {
         if (iterations == max_iterations) {
             r = g = b = 0.0f; // Black for points in the set
             return;
         }
         
         float t = (float)iterations / (float)max_iterations;
-        r = 0.5f * sin(3.0f * t) + 0.5f;
-        g = 0.5f * sin(3.0f * t + 2.094f) + 0.5f; // 2*pi/3
-        b = 0.5f * sin(3.0f * t + 4.188f) + 0.5f; // 4*pi/3
+        float smooth_t = t + 1.0f - log(log(sqrt(4.0f)))/log(2.0f); // Smooth coloring
+        smooth_t = fmod(smooth_t * 0.05f, 1.0f); // Slower color cycling
+        
+        if (smooth_t < 0.16f) {
+            // Deep blue to cyan
+            float local_t = smooth_t / 0.16f;
+            r = 0.0f;
+            g = local_t * 0.7f;
+            b = 0.5f + local_t * 0.5f;
+        } else if (smooth_t < 0.42f) {
+            // Cyan to yellow
+            float local_t = (smooth_t - 0.16f) / 0.26f;
+            r = local_t;
+            g = 0.7f + local_t * 0.3f;
+            b = 1.0f - local_t;
+        } else if (smooth_t < 0.6425f) {
+            // Yellow to red
+            float local_t = (smooth_t - 0.42f) / 0.2225f;
+            r = 1.0f;
+            g = 1.0f - local_t * 0.5f;
+            b = 0.0f;
+        } else if (smooth_t < 0.8575f) {
+            // Red to magenta
+            float local_t = (smooth_t - 0.6425f) / 0.215f;
+            r = 1.0f;
+            g = local_t * 0.5f;
+            b = local_t;
+        } else {
+            // Magenta back to blue
+            float local_t = (smooth_t - 0.8575f) / 0.1425f;
+            r = 1.0f - local_t;
+            g = 0.5f - local_t * 0.5f;
+            b = 1.0f;
+        }
+    }
+    
+    void mapColor_Fire(int iterations, int max_iterations, float& r, float& g, float& b) {
+        if (iterations == max_iterations) {
+            r = g = b = 0.0f;
+            return;
+        }
+        
+        float t = (float)iterations / (float)max_iterations;
+        t = pow(t, 0.8f); // Enhance contrast
+        
+        if (t < 0.25f) {
+            // Black to dark red
+            float local_t = t / 0.25f;
+            r = local_t * 0.8f;
+            g = 0.0f;
+            b = 0.0f;
+        } else if (t < 0.5f) {
+            // Dark red to bright red
+            float local_t = (t - 0.25f) / 0.25f;
+            r = 0.8f + local_t * 0.2f;
+            g = local_t * 0.3f;
+            b = 0.0f;
+        } else if (t < 0.75f) {
+            // Red to orange/yellow
+            float local_t = (t - 0.5f) / 0.25f;
+            r = 1.0f;
+            g = 0.3f + local_t * 0.7f;
+            b = local_t * 0.5f;
+        } else {
+            // Orange to white
+            float local_t = (t - 0.75f) / 0.25f;
+            r = 1.0f;
+            g = 1.0f;
+            b = 0.5f + local_t * 0.5f;
+        }
+    }
+    
+    void mapColor_Ocean(int iterations, int max_iterations, float& r, float& g, float& b) {
+        if (iterations == max_iterations) {
+            r = 0.0f; g = 0.0f; b = 0.1f; // Deep blue for set points
+            return;
+        }
+        
+        float t = (float)iterations / (float)max_iterations;
+        t = sin(t * 3.14159f * 0.5f); // Smoother distribution
+        
+        r = 0.1f + t * (0.3f + 0.7f * sin(t * 6.28f));
+        g = 0.2f + t * (0.6f + 0.4f * cos(t * 4.0f));
+        b = 0.4f + t * (0.6f + 0.4f * sin(t * 8.0f));
+    }
+    
+    void mapColor_Psychedelic(int iterations, int max_iterations, float& r, float& g, float& b) {
+        if (iterations == max_iterations) {
+            r = g = b = 0.0f;
+            return;
+        }
+        
+        float t = (float)iterations / (float)max_iterations;
+        t = fmod(t * 3.0f, 1.0f); // Triple the frequency for more color bands
+        
+        r = 0.5f + 0.5f * sin(2.0f * 3.14159f * t + 0.0f);
+        g = 0.5f + 0.5f * sin(2.0f * 3.14159f * t + 2.09f);
+        b = 0.5f + 0.5f * sin(2.0f * 3.14159f * t + 4.19f);
+        
+        // Enhance saturation
+        float max_val = std::max({r, g, b});
+        if (max_val > 0.5f) {
+            r = std::min(r * 1.2f, 1.0f);
+            g = std::min(g * 1.2f, 1.0f);
+            b = std::min(b * 1.2f, 1.0f);
+        }
+    }
+    
+    void mapColor(int iterations, int max_iterations, float& r, float& g, float& b) {
+        switch (color_scheme) {
+            case 0: mapColor_UltraFractal(iterations, max_iterations, r, g, b); break;
+            case 1: mapColor_Fire(iterations, max_iterations, r, g, b); break;
+            case 2: mapColor_Ocean(iterations, max_iterations, r, g, b); break;
+            case 3: mapColor_Psychedelic(iterations, max_iterations, r, g, b); break;
+            default: mapColor_UltraFractal(iterations, max_iterations, r, g, b); break;
+        }
     }
     
     void update() {
@@ -410,6 +529,17 @@ private:
                     renderer->center_y = 0.0;
                     renderer->zoom = 1.0;
                     break;
+                case GLFW_KEY_C:
+                    // Cycle through color schemes
+                    renderer->color_scheme = (renderer->color_scheme + 1) % 4;
+                    std::cout << "Color scheme: ";
+                    switch (renderer->color_scheme) {
+                        case 0: std::cout << "Ultra Fractal (deep blues to oranges)\n"; break;
+                        case 1: std::cout << "Fire (heat gradient)\n"; break;
+                        case 2: std::cout << "Ocean (turquoise variations)\n"; break;
+                        case 3: std::cout << "Psychedelic (enhanced rainbow)\n"; break;
+                    }
+                    break;
             }
         }
     }
@@ -429,6 +559,7 @@ int main() {
     std::cout << "  Mouse wheel: Zoom\n";
     std::cout << "  Arrow keys: Pan\n";
     std::cout << "  +/-: Increase/decrease iterations\n";
+    std::cout << "  C: Change color scheme\n";
     std::cout << "  R: Reset view\n";
     std::cout << "  ESC: Exit\n\n";
     
