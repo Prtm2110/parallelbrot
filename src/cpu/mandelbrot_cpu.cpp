@@ -367,7 +367,8 @@ private:
     
     void update() {
         // Handle continuous key input for smooth movement
-        const double pan_speed = 2.0 / (zoom * window_width);
+        double scale = 4.0 / zoom;
+        double pan_speed = scale * 0.02;
         
         if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
             center_x -= pan_speed;
@@ -469,10 +470,27 @@ private:
     }
     
     static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
-        (void)xoffset; // Suppress unused warning
+        (void)xoffset;
         auto* renderer = static_cast<CPUMandelbrotRenderer*>(glfwGetWindowUserPointer(window));
+        
+        // Get mouse position and convert to complex plane (before zoom)
+        double mouse_x, mouse_y;
+        glfwGetCursorPos(window, &mouse_x, &mouse_y);
+        
+        double aspect_ratio = (double)renderer->window_width / renderer->window_height;
+        double scale = 4.0 / renderer->zoom;
+        
+        double complex_x = renderer->center_x + scale * aspect_ratio * (mouse_x / renderer->window_width - 0.5);
+        double complex_y = renderer->center_y + scale * (mouse_y / renderer->window_height - 0.5);
+        
+        // Apply zoom
         double zoom_factor = (yoffset > 0) ? 1.2 : 0.8;
         renderer->zoom *= zoom_factor;
+        
+        // Adjust center so the point under cursor remains fixed
+        double new_scale = 4.0 / renderer->zoom;
+        renderer->center_x = complex_x - new_scale * aspect_ratio * (mouse_x / renderer->window_width - 0.5);
+        renderer->center_y = complex_y - new_scale * (mouse_y / renderer->window_height - 0.5);
     }
     
     static void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
@@ -494,9 +512,10 @@ private:
             double dx = xpos - renderer->last_mouse_x;
             double dy = ypos - renderer->last_mouse_y;
             
-            double pan_scale = 2.0 / (renderer->zoom * renderer->window_width);
-            renderer->center_x -= dx * pan_scale;
-            renderer->center_y += dy * pan_scale;
+            double scale = 4.0 / renderer->zoom;
+            double aspect_ratio = (double)renderer->window_width / (double)renderer->window_height;
+            renderer->center_x -= scale * aspect_ratio * dx / renderer->window_width;
+            renderer->center_y += scale * dy / renderer->window_height;
             
             renderer->last_mouse_x = xpos;
             renderer->last_mouse_y = ypos;
@@ -513,31 +532,28 @@ private:
                 case GLFW_KEY_ESCAPE:
                     glfwSetWindowShouldClose(window, true);
                     break;
-                case GLFW_KEY_EQUAL:  // + key
+                case GLFW_KEY_EQUAL:
                 case GLFW_KEY_KP_ADD:
-                    renderer->max_iterations += 32;
-                    if (renderer->max_iterations > 1024) renderer->max_iterations = 1024;
+                    renderer->max_iterations = std::min(renderer->max_iterations + 32, 4096);
                     break;
                 case GLFW_KEY_MINUS:
                 case GLFW_KEY_KP_SUBTRACT:
-                    renderer->max_iterations -= 32;
-                    if (renderer->max_iterations < 32) renderer->max_iterations = 32;
+                    renderer->max_iterations = std::max(renderer->max_iterations - 32, 32);
                     break;
                 case GLFW_KEY_R:
-                    // Reset view
                     renderer->center_x = -0.5;
                     renderer->center_y = 0.0;
                     renderer->zoom = 1.0;
+                    renderer->max_iterations = 128;
                     break;
                 case GLFW_KEY_C:
-                    // Cycle through color schemes
                     renderer->color_scheme = (renderer->color_scheme + 1) % 4;
                     std::cout << "Color scheme: ";
                     switch (renderer->color_scheme) {
-                        case 0: std::cout << "Ultra Fractal (deep blues to oranges)\n"; break;
-                        case 1: std::cout << "Fire (heat gradient)\n"; break;
-                        case 2: std::cout << "Ocean (turquoise variations)\n"; break;
-                        case 3: std::cout << "Psychedelic (enhanced rainbow)\n"; break;
+                        case 0: std::cout << "Ultra Fractal" << std::endl; break;
+                        case 1: std::cout << "Fire" << std::endl; break;
+                        case 2: std::cout << "Ocean" << std::endl; break;
+                        case 3: std::cout << "Psychedelic" << std::endl; break;
                     }
                     break;
             }

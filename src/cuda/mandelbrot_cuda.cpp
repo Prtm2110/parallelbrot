@@ -25,6 +25,7 @@
 #include <chrono>
 #include <cmath>
 #include <string>
+#include <algorithm>
 
 // Forward declarations for CUDA kernel functions
 extern "C" {
@@ -331,6 +332,23 @@ private:
     }
     
     void update() {
+        // Handle continuous key input for smooth movement
+        double scale = 4.0 / zoom;
+        double pan_speed = scale * 0.02;
+        
+        if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
+            center_x -= pan_speed;
+        }
+        if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
+            center_x += pan_speed;
+        }
+        if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
+            center_y += pan_speed;
+        }
+        if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
+            center_y -= pan_speed;
+        }
+        
         // Launch CUDA kernel to compute Mandelbrot set
         launch_mandelbrot_kernel(
             d_output_buffer,
@@ -345,11 +363,9 @@ private:
         
         // Copy result to OpenGL texture
         if (use_gl_interop) {
-            // Use CUDA-OpenGL interop (faster)
             cudaGraphicsMapResources(1, &cuda_gl_resource);
             cudaGraphicsSubResourceGetMappedArray(&cuda_array, cuda_gl_resource, 0, 0);
             
-            // Copy from device buffer to OpenGL texture via CUDA array
             cudaMemcpy2DToArray(cuda_array, 0, 0, d_output_buffer, 
                                window_width * sizeof(float4),
                                window_width * sizeof(float4),
@@ -358,7 +374,6 @@ private:
             
             cudaGraphicsUnmapResources(1, &cuda_gl_resource);
         } else {
-            // Fallback: copy to CPU then to OpenGL
             cudaMemcpy(cpu_buffer.data(), d_output_buffer, 
                       window_width * window_height * sizeof(float4), 
                       cudaMemcpyDeviceToHost);
@@ -424,18 +439,32 @@ private:
     }
     
     static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
-        CUDAMandelbrotRenderer* renderer = static_cast<CUDAMandelbrotRenderer*>(glfwGetWindowUserPointer(window));
+        (void)xoffset;
+        auto* renderer = static_cast<CUDAMandelbrotRenderer*>(glfwGetWindowUserPointer(window));
         
-        double zoom_factor = 1.1;
-        if (yoffset > 0) {
-            renderer->zoom *= zoom_factor;
-        } else {
-            renderer->zoom /= zoom_factor;
-        }
+        // Get mouse position and convert to complex plane (before zoom)
+        double mouse_x, mouse_y;
+        glfwGetCursorPos(window, &mouse_x, &mouse_y);
+        
+        double aspect_ratio = (double)renderer->window_width / renderer->window_height;
+        double scale = 4.0 / renderer->zoom;
+        
+        double complex_x = renderer->center_x + scale * aspect_ratio * (mouse_x / renderer->window_width - 0.5);
+        double complex_y = renderer->center_y + scale * (mouse_y / renderer->window_height - 0.5);
+        
+        // Apply zoom
+        double zoom_factor = (yoffset > 0) ? 1.2 : 0.8;
+        renderer->zoom *= zoom_factor;
+        
+        // Adjust center so the point under cursor remains fixed
+        double new_scale = 4.0 / renderer->zoom;
+        renderer->center_x = complex_x - new_scale * aspect_ratio * (mouse_x / renderer->window_width - 0.5);
+        renderer->center_y = complex_y - new_scale * (mouse_y / renderer->window_height - 0.5);
     }
     
     static void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
-        CUDAMandelbrotRenderer* renderer = static_cast<CUDAMandelbrotRenderer*>(glfwGetWindowUserPointer(window));
+        (void)mods;
+        auto* renderer = static_cast<CUDAMandelbrotRenderer*>(glfwGetWindowUserPointer(window));
         
         if (button == GLFW_MOUSE_BUTTON_LEFT) {
             if (action == GLFW_PRESS) {
@@ -448,7 +477,7 @@ private:
     }
     
     static void cursor_pos_callback(GLFWwindow* window, double xpos, double ypos) {
-        CUDAMandelbrotRenderer* renderer = static_cast<CUDAMandelbrotRenderer*>(glfwGetWindowUserPointer(window));
+        auto* renderer = static_cast<CUDAMandelbrotRenderer*>(glfwGetWindowUserPointer(window));
         
         if (renderer->mouse_dragging) {
             double dx = xpos - renderer->last_mouse_x;
@@ -456,7 +485,6 @@ private:
             
             double scale = 4.0 / renderer->zoom;
             double aspect_ratio = (double)renderer->window_width / (double)renderer->window_height;
-            
             renderer->center_x -= scale * aspect_ratio * dx / renderer->window_width;
             renderer->center_y += scale * dy / renderer->window_height;
             
@@ -466,7 +494,9 @@ private:
     }
     
     static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-        CUDAMandelbrotRenderer* renderer = static_cast<CUDAMandelbrotRenderer*>(glfwGetWindowUserPointer(window));
+        (void)scancode;
+        (void)mods;
+        auto* renderer = static_cast<CUDAMandelbrotRenderer*>(glfwGetWindowUserPointer(window));
         
         if (action == GLFW_PRESS || action == GLFW_REPEAT) {
             switch (key) {
@@ -487,20 +517,7 @@ private:
                     renderer->zoom = 1.0;
                     renderer->max_iterations = 128;
                     break;
-                case GLFW_KEY_LEFT:
-                    renderer->center_x -= 0.1 / renderer->zoom;
-                    break;
-                case GLFW_KEY_RIGHT:
-                    renderer->center_x += 0.1 / renderer->zoom;
-                    break;
-                case GLFW_KEY_UP:
-                    renderer->center_y += 0.1 / renderer->zoom;
-                    break;
-                case GLFW_KEY_DOWN:
-                    renderer->center_y -= 0.1 / renderer->zoom;
-                    break;
                 case GLFW_KEY_C:
-                    // Cycle through color schemes
                     renderer->color_scheme = (renderer->color_scheme + 1) % 4;
                     std::cout << "Color scheme: ";
                     switch (renderer->color_scheme) {

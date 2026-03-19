@@ -16,7 +16,7 @@ echo
 
 echo "2. Building all versions..."
 echo "Building OpenCL version..."
-make simple > /dev/null 2>&1 && echo "✓ OpenCL version built successfully" || echo "✗ OpenCL version failed to build"
+make opencl > /dev/null 2>&1 && echo "✓ OpenCL version built successfully" || echo "✗ OpenCL version failed to build"
 
 echo "Building CPU version..."
 make cpu > /dev/null 2>&1 && echo "✓ CPU version built successfully" || echo "✗ CPU version failed to build" 

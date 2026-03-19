@@ -1,207 +1,210 @@
-# Makefile for Mandelbrot Renderer with OpenCL and CUDA support
-# Requires: OpenGL, OpenCL/CUDA, GLFW, GLEW
+# Makefile for Mandelbrot Renderer
+# Supports: Linux, macOS (Homebrew), Windows (MSYS2/MinGW)
+# Requires: OpenGL, GLFW3, GLEW, OpenCL (+ CUDA for nvidia targets)
 
-CC = g++
-NVCC = nvcc
-CFLAGS = -std=c++17 -O3 -Wall -Wextra
-NVCCFLAGS = -std=c++17 -O3 -arch=sm_50
-LIBS = -lGL -lGLEW -lglfw -lOpenCL -lpthread
-CUDA_LIBS = -lGL -lGLEW -lglfw -lcuda -lcudart -lpthread
+CC        = g++
+NVCC      = nvcc
+CFLAGS    = -std=c++17 -O3 -Wall -Wextra -DCL_TARGET_OPENCL_VERSION=120
+NVCCFLAGS = -std=c++17 -O3
 
-# Detect system
-UNAME_S := $(shell uname -s)
+# ────────────────────────────────────────────────────────────
+# OS Detection
+# ────────────────────────────────────────────────────────────
+UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)
 
-# Linux-specific settings
+# ──────────────── Linux ────────────────
 ifeq ($(UNAME_S),Linux)
-    CFLAGS += -D_GNU_SOURCE
-    LIBS += -lX11 -lXrandr -lXinerama -lXcursor -ldl
-    CUDA_LIBS += -lX11 -lXrandr -lXinerama -lXcursor -ldl
+    CFLAGS     += -D_GNU_SOURCE
+    EXE        :=
+    # Use pkg-config for accurate per-distro flags; fallback to sensible defaults
+    HAVE_PKG   := $(shell command -v pkg-config 2>/dev/null)
+    ifneq ($(HAVE_PKG),)
+        CORE_LIBS  := $(shell pkg-config --libs glfw3 glew gl 2>/dev/null || echo "-lGL -lGLEW -lglfw")
+        X11_LIBS   := $(shell pkg-config --libs x11 xrandr 2>/dev/null || echo "-lX11 -lXrandr")
+    else
+        CORE_LIBS  := -lGL -lGLEW -lglfw
+        X11_LIBS   := -lX11 -lXrandr
+    endif
+    EXTRA_LIBS  := -lpthread -ldl $(X11_LIBS)
+    LIBS        := $(CORE_LIBS) -lOpenCL $(EXTRA_LIBS)
+    CPU_LIBS    := $(CORE_LIBS) $(EXTRA_LIBS)
+    CUDA_LIBS   := $(CORE_LIBS) -lcuda -lcudart $(EXTRA_LIBS)
+    NVCCFLAGS   += -arch=sm_50
 endif
 
-# macOS-specific settings (if you want to port later)
+# ──────────────── macOS (Homebrew) ────────────────
 ifeq ($(UNAME_S),Darwin)
-    CFLAGS += -I/opt/homebrew/include
-    LIBS += -L/opt/homebrew/lib -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
-    CUDA_LIBS += -L/opt/homebrew/lib -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
+    EXE         :=
+    BREW_PREFIX := $(shell brew --prefix 2>/dev/null || echo /opt/homebrew)
+    CFLAGS      += -I$(BREW_PREFIX)/include
+    FWORK       := -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
+    CORE_LIBS   := -L$(BREW_PREFIX)/lib -lglfw -lGLEW
+    EXTRA_LIBS  := $(FWORK) -lpthread
+    # macOS ships OpenCL as a framework
+    LIBS        := $(CORE_LIBS) -framework OpenCL $(EXTRA_LIBS)
+    CPU_LIBS    := $(CORE_LIBS) $(EXTRA_LIBS)
+    CUDA_LIBS   := $(CORE_LIBS) -lcuda -lcudart $(EXTRA_LIBS)
+    NVCCFLAGS   += -arch=sm_50
 endif
 
-# Source directories
-SRC_DIR = src
+# ──────────────── Windows (MSYS2 / MinGW) ────────────────
+ifeq ($(OS),Windows_NT)
+    EXE        := .exe
+    CFLAGS     += -D_WIN32
+    HAVE_PKG   := $(shell command -v pkg-config 2>/dev/null)
+    ifneq ($(HAVE_PKG),)
+        CORE_LIBS  := $(shell pkg-config --libs glfw3 glew 2>/dev/null || echo "-lglfw3 -lGLEW")
+    else
+        CORE_LIBS  := -lglfw3 -lGLEW
+    endif
+    EXTRA_LIBS  := -lopengl32 -lgdi32 -lpthread
+    LIBS        := $(CORE_LIBS) -lOpenCL $(EXTRA_LIBS)
+    CPU_LIBS    := $(CORE_LIBS) $(EXTRA_LIBS)
+    CUDA_LIBS   := $(CORE_LIBS) -lcuda -lcudart $(EXTRA_LIBS)
+    NVCCFLAGS   += -arch=sm_50
+endif
+
+# ────────────────────────────────────────────────────────────
+# Paths & Targets
+# ────────────────────────────────────────────────────────────
+SRC_DIR    = src
 OPENCL_DIR = $(SRC_DIR)/opencl
-CUDA_DIR = $(SRC_DIR)/cuda
-CPU_DIR = $(SRC_DIR)/cpu
-BUILD_DIR = build
+CUDA_DIR   = $(SRC_DIR)/cuda
+CPU_DIR    = $(SRC_DIR)/cpu
+BUILD_DIR  = build
 
-# Targets and sources with new paths
-TARGET = $(BUILD_DIR)/mandelbrot_opencl_full
-TARGET_C = $(BUILD_DIR)/mandelbrot_opencl_c
-TARGET_SIMPLE = $(BUILD_DIR)/mandelbrot_opencl
-TARGET_CPU = $(BUILD_DIR)/mandelbrot_cpu
-TARGET_CUDA = $(BUILD_DIR)/mandelbrot_cuda
+TARGET_OC   = $(BUILD_DIR)/mandelbrot_opencl$(EXE)
+TARGET_CPU  = $(BUILD_DIR)/mandelbrot_cpu$(EXE)
+TARGET_CUDA = $(BUILD_DIR)/mandelbrot_cuda$(EXE)
 
-SOURCES = $(OPENCL_DIR)/mandelbrot_opencl_full.cpp
-SOURCES_C = $(OPENCL_DIR)/mandelbrot_opencl_c.cpp
-SOURCES_SIMPLE = $(OPENCL_DIR)/mandelbrot_opencl.cpp
-SOURCES_CPU = $(CPU_DIR)/mandelbrot_cpu.cpp
+SOURCES_OC   = $(OPENCL_DIR)/mandelbrot_opencl.cpp
+SOURCES_CPU  = $(CPU_DIR)/mandelbrot_cpu.cpp
 SOURCES_CUDA = $(CUDA_DIR)/mandelbrot_cuda.cpp
-CUDA_KERNEL = $(CUDA_DIR)/mandelbrot_kernel.cu
-KERNEL_FILE = $(OPENCL_DIR)/mandelbrot_kernel.cl
+CUDA_KERNEL  = $(CUDA_DIR)/mandelbrot_kernel.cu
+KERNEL_FILE  = $(OPENCL_DIR)/mandelbrot_kernel.cl
 
-.PHONY: all clean install-deps run debug c-version opencl cpu cuda check-opencl check-cuda install-cuda
+# ────────────────────────────────────────────────────────────
+# Build Rules
+# ────────────────────────────────────────────────────────────
+.PHONY: all opencl cpu cuda clean run help \
+        install-deps-ubuntu install-deps-fedora install-deps-arch install-deps-macos \
+        install-cuda-ubuntu install-cuda-fedora install-cuda-arch \
+        check-opencl check-cuda release
 
-all: $(TARGET_SIMPLE) $(TARGET_CPU)
+all: $(TARGET_OC) $(TARGET_CPU)
 
-# Ensure build directory exists
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-$(TARGET): $(SOURCES) $(KERNEL_FILE) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(SOURCES) -o $(TARGET) $(LIBS)
-
-$(TARGET_C): $(SOURCES_C) $(KERNEL_FILE) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(SOURCES_C) -o $(TARGET_C) $(LIBS)
-
-$(TARGET_SIMPLE): $(SOURCES_SIMPLE) $(KERNEL_FILE) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(SOURCES_SIMPLE) -o $(TARGET_SIMPLE) $(LIBS)
+$(TARGET_OC): $(SOURCES_OC) $(KERNEL_FILE) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(SOURCES_OC) -o $@ $(LIBS)
 
 $(TARGET_CPU): $(SOURCES_CPU) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(SOURCES_CPU) -o $(TARGET_CPU) -lGL -lGLEW -lglfw -lpthread -lX11 -lXrandr -lXinerama -lXcursor -ldl
+	$(CC) $(CFLAGS) $(SOURCES_CPU) -o $@ $(CPU_LIBS)
 
 $(TARGET_CUDA): $(SOURCES_CUDA) $(CUDA_KERNEL) | $(BUILD_DIR)
-	$(NVCC) $(NVCCFLAGS) $(CUDA_KERNEL) $(SOURCES_CUDA) -o $(TARGET_CUDA) $(CUDA_LIBS)
+	$(NVCC) $(NVCCFLAGS) $(CUDA_KERNEL) $(SOURCES_CUDA) -o $@ $(CUDA_LIBS)
 
-c-version: $(TARGET_C)
-
-opencl: $(TARGET_SIMPLE)
-
-# Deprecated alias for backward compatibility
-simple: opencl
-	@echo "Warning: 'make simple' is deprecated. Use 'make opencl' instead."
-
-cpu: $(TARGET_CPU)
-
-cuda: $(TARGET_CUDA)
+opencl:    $(TARGET_OC)
+cpu:       $(TARGET_CPU)
+cuda:      $(TARGET_CUDA)
 
 debug: CFLAGS += -g -DDEBUG
-debug: $(TARGET)
+debug: $(TARGET_OC)
+
+release: CFLAGS += -DNDEBUG -march=native -flto
+release: $(TARGET_OC)
+
+run: $(TARGET_OC)
+	./$(TARGET_OC)
 
 clean:
 	rm -f $(BUILD_DIR)/*
 	rmdir $(BUILD_DIR) 2>/dev/null || true
 
-# Install dependencies on Ubuntu/Debian
+# ────────────────────────────────────────────────────────────
+# Dependency Installation Helpers
+# ────────────────────────────────────────────────────────────
+
 install-deps-ubuntu:
 	sudo apt update
-	sudo apt install -y build-essential cmake pkg-config
-	sudo apt install -y libgl1-mesa-dev libglu1-mesa-dev
-	sudo apt install -y libglfw3-dev libglew-dev
-	sudo apt install -y opencl-headers ocl-icd-opencl-dev
-	sudo apt install -y mesa-opencl-icd  # Mesa OpenCL implementation
-	# For NVIDIA GPUs:
-	# sudo apt install nvidia-opencl-dev
+	sudo apt install -y build-essential pkg-config \
+	    libgl1-mesa-dev libglu1-mesa-dev \
+	    libglfw3-dev libglew-dev \
+	    opencl-headers ocl-icd-opencl-dev \
+	    mesa-opencl-icd
+	@echo "  (NVIDIA GPU users: also run 'make install-cuda-ubuntu')"
 
-# Install CUDA dependencies on Ubuntu/Debian
 install-cuda-ubuntu:
-	@echo "Installing CUDA dependencies for Ubuntu/Debian..."
 	sudo apt update
-	sudo apt install -y build-essential cmake pkg-config
-	sudo apt install -y libgl1-mesa-dev libglu1-mesa-dev
-	sudo apt install -y libglfw3-dev libglew-dev
-	@echo "For CUDA support, install NVIDIA CUDA Toolkit:"
-	@echo "  wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb"
-	@echo "  sudo dpkg -i cuda-keyring_1.0-1_all.deb"
-	@echo "  sudo apt update"
-	@echo "  sudo apt install -y cuda-toolkit"
-	@echo "Or visit: https://developer.nvidia.com/cuda-downloads"
+	sudo apt install -y nvidia-cuda-toolkit
+	@echo "For the latest CUDA toolkit visit: https://developer.nvidia.com/cuda-downloads"
 
-# Install dependencies on Fedora/RHEL
 install-deps-fedora:
-	sudo dnf install -y gcc-c++ cmake pkgconfig
-	sudo dnf install -y mesa-libGL-devel mesa-libGLU-devel
-	sudo dnf install -y glfw-devel glew-devel
-	sudo dnf install -y opencl-headers ocl-icd-devel
-	sudo dnf install -y mesa-libOpenCL
+	sudo dnf install -y gcc-c++ pkgconfig \
+	    mesa-libGL-devel mesa-libGLU-devel \
+	    glfw-devel glew-devel \
+	    opencl-headers ocl-icd-devel \
+	    mesa-libOpenCL
 
-# Install CUDA dependencies on Fedora/RHEL
 install-cuda-fedora:
-	@echo "Installing CUDA dependencies for Fedora/RHEL..."
-	sudo dnf install -y gcc-c++ cmake pkgconfig
-	sudo dnf install -y mesa-libGL-devel mesa-libGLU-devel
-	sudo dnf install -y glfw-devel glew-devel
-	@echo "For CUDA support, install NVIDIA CUDA Toolkit:"
-	@echo "  sudo dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/fedora37/x86_64/cuda-fedora37.repo"
-	@echo "  sudo dnf install -y cuda-toolkit"
-	@echo "Or visit: https://developer.nvidia.com/cuda-downloads"
+	@echo "Install NVIDIA CUDA Toolkit from: https://developer.nvidia.com/cuda-downloads"
+	@echo "Then: sudo dnf install -y cuda-toolkit"
 
-# Install dependencies on Arch Linux
 install-deps-arch:
-	sudo pacman -S --needed base-devel cmake pkgconf
-	sudo pacman -S --needed mesa glu
-	sudo pacman -S --needed glfw-x11 glew
-	sudo pacman -S --needed opencl-headers ocl-icd
-	sudo pacman -S --needed mesa-opencl-icd
+	sudo pacman -S --needed base-devel pkgconf \
+	    mesa glu glfw-x11 glew \
+	    opencl-headers ocl-icd mesa-opencl-icd
 
-# Install CUDA dependencies on Arch Linux
 install-cuda-arch:
-	@echo "Installing CUDA dependencies for Arch Linux..."
-	sudo pacman -S --needed base-devel cmake pkgconf
-	sudo pacman -S --needed mesa glu
-	sudo pacman -S --needed glfw-x11 glew
-	sudo pacman -S --needed cuda cuda-tools
+	sudo pacman -S --needed cuda
 
-run: $(TARGET_SIMPLE)
-	$(TARGET_SIMPLE)
+install-deps-macos:
+	@which brew >/dev/null 2>&1 || (echo "Install Homebrew first: https://brew.sh" && exit 1)
+	brew install pkg-config glfw glew
 
-# Check OpenCL devices
+# ────────────────────────────────────────────────────────────
+# Diagnostics
+# ────────────────────────────────────────────────────────────
+
 check-opencl:
 	@echo "Checking OpenCL devices:"
 	@which clinfo >/dev/null 2>&1 && clinfo || echo "Install clinfo to see OpenCL device information"
 
-# Check CUDA devices
 check-cuda:
 	@echo "Checking CUDA devices:"
-	@which nvidia-smi >/dev/null 2>&1 && nvidia-smi || echo "nvidia-smi not found. Install NVIDIA drivers and CUDA toolkit."
-	@which nvcc >/dev/null 2>&1 && echo "NVCC version: $$(nvcc --version | grep -o 'V[0-9]*\.[0-9]*\.[0-9]*')" || echo "nvcc not found. Install CUDA toolkit."
+	@which nvidia-smi >/dev/null 2>&1 && nvidia-smi || echo "nvidia-smi not found. Install NVIDIA drivers."
+	@which nvcc >/dev/null 2>&1 \
+	    && echo "NVCC: $$(nvcc --version | grep -o 'V[0-9]*\.[0-9]*\.[0-9]*')" \
+	    || echo "nvcc not found. Install CUDA Toolkit (run: make install-cuda-ubuntu/fedora/arch)."
 
-# Performance test
-benchmark: $(TARGET)
-	@echo "Running performance benchmark..."
-	@time ./$(TARGET) --benchmark
-
+# ────────────────────────────────────────────────────────────
+# Help
+# ────────────────────────────────────────────────────────────
 help:
-	@echo "Available targets:"
-	@echo "  all                  - Build the OpenCL versions (opencl + cpu)"
-	@echo "  simple               - Build main OpenCL GPU version"
-	@echo "  cpu                  - Build CPU version"
-	@echo "  cuda                 - Build CUDA GPU version"
-	@echo "  c-version            - Build C-style OpenCL version"
-	@echo "  debug                - Build with debug symbols"
-	@echo "  clean                - Remove built files"
-	@echo "  run                  - Build and run the main OpenCL version"
 	@echo ""
-	@echo "Built executables will be in the 'build/' directory:"
-	@echo "  build/mandelbrot_opencl      - Main OpenCL version"
-	@echo "  build/mandelbrot_cpu         - CPU version"
-	@echo "  build/mandelbrot_cuda        - CUDA version (if built)"
-	@echo "  build/mandelbrot_opencl_full - Full-featured OpenCL version"
-	@echo ""
-	@echo "Installation targets:"
-	@echo "  install-deps-ubuntu  - Install OpenCL dependencies on Ubuntu/Debian"
-	@echo "  install-deps-fedora  - Install OpenCL dependencies on Fedora/RHEL"
-	@echo "  install-deps-arch    - Install OpenCL dependencies on Arch Linux"
-	@echo "  install-cuda-ubuntu  - Install CUDA dependencies on Ubuntu/Debian"
-	@echo "  install-cuda-fedora  - Install CUDA dependencies on Fedora/RHEL"
-	@echo "  install-cuda-arch    - Install CUDA dependencies on Arch Linux"
-	@echo ""
-	@echo "Diagnostic targets:"
-	@echo "  check-opencl         - Check available OpenCL devices"
-	@echo "  check-cuda           - Check available CUDA devices"
-	@echo "  help                 - Show this help message"
+	@echo "Mandelbrot Renderer — Build Targets"
+	@echo "─────────────────────────────────────────────────"
+	@echo "  make all          Build OpenCL + CPU backends (default)"
+	@echo "  make opencl       OpenCL GPU backend (any GPU)"
+	@echo "  make cpu          CPU-only fallback backend"
+	@echo "  make cuda         CUDA GPU backend (NVIDIA only)"
 
-# Additional build configurations
-release: CFLAGS += -DNDEBUG -march=native -flto
-release: $(TARGET)
-
-profile: CFLAGS += -pg -g
-profile: LIBS += -pg
-profile: $(TARGET)
+	@echo "  make clean        Remove build artifacts"
+	@echo "  make run          Build and run the OpenCL version"
+	@echo ""
+	@echo "Dependency Installation"
+	@echo "─────────────────────────────────────────────────"
+	@echo "  make install-deps-ubuntu   Ubuntu / Debian"
+	@echo "  make install-deps-fedora   Fedora / RHEL"
+	@echo "  make install-deps-arch     Arch Linux"
+	@echo "  make install-deps-macos    macOS (Homebrew)"
+	@echo "  make install-cuda-ubuntu   CUDA on Ubuntu"
+	@echo "  make install-cuda-fedora   CUDA on Fedora"
+	@echo "  make install-cuda-arch     CUDA on Arch"
+	@echo ""
+	@echo "Diagnostics"
+	@echo "─────────────────────────────────────────────────"
+	@echo "  make check-opencl   List OpenCL devices"
+	@echo "  make check-cuda     Check CUDA / nvcc"
+	@echo ""
